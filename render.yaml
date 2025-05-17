@@ -2,16 +2,14 @@ services:
   - type: web
     name: filmsbot
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install -r requirements.txt
+      apt-get update && apt-get install -y aria2
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
         value: 7593641535:AAELSxTmLO5pxfzNLKi1vAeS-XKsLKSmlek
-      - key: RTR_LOGIN
-        value: leanyster
-      - key: RTR_PASSWORD
-        value: Balakakotik29
       - key: CHANNEL_ID
-        value: @leanysterj
+        value: "@leanysterj"
       - key: WEBHOOK_HOST
-        value: https://your-render-app-name.onrender.com
+        value: https://hueta.onrender.com

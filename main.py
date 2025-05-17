@@ -66,5 +66,5 @@ async def main():
     app.router.add_post(WEBHOOK_PATH, lambda request: dp.resolve_webhook(request, bot=bot))
     return app
 
-if name == "__main__":
+if __name__ == "__main__":
     web.run_app(main(), host="0.0.0.0", port=PORT)

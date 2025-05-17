@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: filmsbot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: BOT_TOKEN
+        value: 7593641535:AAELSxTmLO5pxfzNLKi1vAeS-XKsLKSmlek
+      - key: CHANNEL_ID
+        value: @leanysterj

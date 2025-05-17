@@ -9,6 +9,8 @@ import logging
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
+RTR_LOGIN = os.getenv("RTR_LOGIN")
+RTR_PASSWORD = os.getenv("RTR_PASSWORD")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -24,8 +26,20 @@ headers = {
 }
 
 async def search_rutracker(query):
+    login_url = f"{BASE_URL}/forum/login.php"
+    payload = {
+        "login_username": RTR_LOGIN,
+        "login_password": RTR_PASSWORD,
+        "login": "%C2%F5%EE%E4"  # кнопка "Вход"
+    }
+
     async with aiohttp.ClientSession(headers=headers) as session:
         try:
+            async with session.post(login_url, data=payload) as login_resp:
+                if login_resp.status != 200:
+                    logger.error("Ошибка авторизации на Rutracker")
+                    return []
+
             async with session.get(SEARCH_URL.format(query)) as resp:
                 html = await resp.text()
                 soup = BeautifulSoup(html, "html.parser")

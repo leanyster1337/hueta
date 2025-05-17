@@ -1,15 +1,17 @@
 services:
   - type: web
     name: filmsbot
-    runtime: python
+    env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
         value: 7593641535:AAELSxTmLO5pxfzNLKi1vAeS-XKsLKSmlek
-      - key: CHANNEL_ID
-        value: @leanysterj
       - key: RTR_LOGIN
         value: leanyster
       - key: RTR_PASSWORD
         value: Balakakotik29
+      - key: CHANNEL_ID
+        value: @leanysterj
+      - key: WEBHOOK_HOST
+        value: https://your-render-app-name.onrender.com

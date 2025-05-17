@@ -1,111 +1,69 @@
 import os
 import logging
-import asyncio
 import aiohttp
 from aiogram import Bot, Dispatcher, types
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from bs4 import BeautifulSoup
+from aiogram.filters import Command
 from aiohttp import web
-import subprocess
+from bs4 import BeautifulSoup
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")  # https://your-render-url.onrender.com
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
-
-CHANNEL_ID = os.getenv("CHANNEL_ID")  # Например, "@your_channel"
-PORT = int(os.getenv("PORT", default=10000))
-
+# Логгирование
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Переменные среды
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")  # например: https://your-app-name.onrender.com
+WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+PORT = int(os.getenv("PORT", 10000))
 
 bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
-RUTOR_URL = "https://rutor.info/search/0/0/010/2/{}"
-
 async def search_rutor(query: str):
+    url = f"http://rutor.info/search/0/0/010/2/{query}"
     async with aiohttp.ClientSession() as session:
-        url = RUTOR_URL.format(query.replace(" ", "%20"))
-        async with session.get(url) as response:
-            html = await response.text()
-    soup = BeautifulSoup(html, "html.parser")
-    rows = soup.select("tr.gai, tr.gaj")
+        async with session.get(url) as resp:
+            html = await resp.text()
+            soup = BeautifulSoup(html, "html.parser")
+            rows = soup.select("tr.gai, tr.gaj")
+            results = []
 
-    results = []
-    for row in rows[:10]:
-        link = row.select_one("a[href^='/torrent']")
-        if not link:
-            continue
-        title = link.text.strip()
-        href = link['href']
-        torrent_page_url = f"https://rutor.info{href}"
+            for row in rows[:10]:
+                link_tag = row.select_one("a[href^='/torrent/']")
+                magnet_tag = row.select_one("a[href^='magnet:']")
+                if not link_tag or not magnet_tag:
+                    continue
+                title = link_tag.text.strip()
+                magnet = magnet_tag["href"]
+                results.append({"title": title, "magnet": magnet})
 
-        # Переход на страницу торрента и вытаскивание magnet-ссылки
-        async with aiohttp.ClientSession() as session:
-            async with session.get(torrent_page_url) as torrent_page:
-                page_html = await torrent_page.text()
-        page_soup = BeautifulSoup(page_html, "html.parser")
-        magnet_tag = page_soup.find("a", href=True, string="Magnet")
-        if not magnet_tag:
-            continue
+            return results
 
-        magnet = magnet_tag["href"]
-        results.append({
-            "title": title,
-            "magnet": magnet
-        })
-
-    return results
+@dp.message(Command("start"))
+async def start_handler(message: types.Message):
+    await message.answer("Привет! Введи название фильма, и я найду его на Rutor.")
 
 @dp.message()
-async def handle_message(message: types.Message):
-    results = await search_rutor(message.text)
-
+async def handle_query(message: types.Message):
+    query = message.text.strip()
+    results = await search_rutor(query)
     if not results:
-        await message.answer("Фильмы не найдены, попробуй изменить запрос.")
+        await message.answer("Фильмы не найдены. Попробуйте изменить запрос.")
         return
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=r["title"], callback_data=r["magnet"])]
-        for r in results
+        [InlineKeyboardButton(text=r["title"][:64], url=r["magnet"])] for r in results
     ])
-    await message.answer("Выбери фильм:", reply_markup=keyboard)
-
-@dp.callback_query()
-async def handle_callback(callback: types.CallbackQuery):
-    magnet = callback.data
-    await callback.message.answer("Скачиваю фильм, подожди...")
-
-    filename = "movie.mp4"
-    filepath = os.path.join("downloads", filename)
-    os.makedirs("downloads", exist_ok=True)
-
-    proc = await asyncio.create_subprocess_exec(
-        "aria2c", magnet, "--dir=downloads", "--out=" + filename,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    await proc.communicate()
-
-    if os.path.exists(filepath) and os.path.getsize(filepath) < 2 * 1024 * 1024 * 1024:
-        await callback.message.answer_document(types.FSInputFile(filepath), caption="Готово!")
-        if CHANNEL_ID:
-            await bot.send_document(CHANNEL_ID, types.FSInputFile(filepath), caption="Фильм загружен")
-    else:
-        await callback.message.answer("Файл не удалось отправить. Возможно, он превышает 2 ГБ.")
-
-async def on_startup(bot: Bot):
-    await bot.set_webhook(WEBHOOK_URL)
+    await message.answer("Найдено:", reply_markup=keyboard)
 
 async def main():
+    await bot.set_webhook(WEBHOOK_URL)
     app = web.Application()
-    dp.startup.register(on_startup)
-    dp.include_router(dp.message.router)
-    setup_application(app, dp, bot=bot)
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+    app.router.add_post(WEBHOOK_PATH, lambda request: dp.resolve_webhook(request, bot=bot))
     return app
 
-if __name__ == "__main__":
+if name == "__main__":
     web.run_app(main(), host="0.0.0.0", port=PORT)

@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.client.default import DefaultBotProperties
 from search import search_movie
-from kinosimka_utils import get_download_url
+from kinosimka_utils import get_download_links
 import aiohttp
 
 load_dotenv()
@@ -21,6 +21,7 @@ bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTM
 dp = Dispatcher(storage=MemoryStorage())
 
 user_search_results = {}
+user_quality_links = {}
 
 @dp.message(F.text.lower() == "/start")
 async def cmd_start(message: types.Message):
@@ -57,35 +58,64 @@ async def process_selection(callback: CallbackQuery):
         return
 
     title, link = results[idx]
-    await callback.message.answer(f"Ищу ссылку для скачивания для «{title}»...")
+    await callback.message.answer(f"Выберите качество для «{title}»:")
+
+    # Получаем варианты качества
+    links = await get_download_links(link)
+    if not links:
+        await callback.message.answer("⚠️ Не удалось найти ссылки для скачивания.")
+        return
+
+    user_quality_links[callback.from_user.id] = links
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"{l['text']} ({l['quality']})",
+                callback_data=f"dl_{idx}_{i}"
+            )]
+            for i, l in enumerate(links)
+        ]
+    )
+    await callback.message.answer("Доступные варианты:", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("dl_"))
+async def process_download(callback: CallbackQuery):
+    _, film_idx, link_idx = callback.data.split("_")
+    film_idx = int(film_idx)
+    link_idx = int(link_idx)
+    results = user_search_results.get(callback.from_user.id)
+    if not results or film_idx >= len(results):
+        await callback.answer("Некорректный выбор (фильм)")
+        return
+    title, link = results[film_idx]
+    links = user_quality_links.get(callback.from_user.id)
+    if not links or link_idx >= len(links):
+        await callback.answer("Некорректный выбор (качество)")
+        return
+    file_url = links[link_idx]["url"]
+    quality = links[link_idx]["quality"]
+
+    fname = f"{title}_{quality}.mp4"
+    await callback.message.answer(f"Скачиваю файл {fname}...")
 
     try:
-        download_url = await get_download_url(link)
-        if not download_url:
-            await callback.message.answer("⚠️ Не удалось найти ссылку для скачивания.")
-            return
-
-        if download_url.endswith(".mp4"):
-            fname = f"{title}.mp4"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(download_url) as resp:
-                    if resp.status != 200:
-                        await callback.message.answer("Ошибка скачивания видео.")
-                        return
-                    with open(fname, "wb") as f:
-                        while True:
-                            chunk = await resp.content.read(1024*1024)
-                            if not chunk:
-                                break
-                            f.write(chunk)
-            await callback.message.answer("Отправляю файл...")
-            await bot.send_video(callback.from_user.id, types.FSInputFile(fname), caption=title)
-            os.remove(fname)
-        else:
-            await callback.message.answer(f"Видео найдено! Вот ссылка на скачивание или просмотр:\n{download_url}")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(file_url) as resp:
+                if resp.status != 200:
+                    await callback.message.answer("Ошибка скачивания видео.")
+                    return
+                with open(fname, "wb") as f:
+                    while True:
+                        chunk = await resp.content.read(1024*1024)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+        await callback.message.answer("Отправляю видео...")
+        await bot.send_video(callback.from_user.id, types.FSInputFile(fname), caption=title)
+        os.remove(fname)
     except Exception as e:
         logging.exception(e)
-        await callback.message.answer(f"⚠️ Ошибка при получении видео: {e}")
+        await callback.message.answer(f"⚠️ Ошибка при скачивании/отправке видео: {e}")
 
 async def on_startup(app):
     await bot.set_webhook(f"{WEBHOOK_HOST}/webhook")

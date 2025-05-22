@@ -12,7 +12,6 @@ from kinosimka_utils import get_download_links
 import aiohttp
 
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
 PORT = int(os.getenv("PORT", 10000))
@@ -60,7 +59,6 @@ async def process_selection(callback: CallbackQuery):
     title, link = results[idx]
     await callback.message.answer(f"Выберите качество для «{title}»:")
 
-    # Получаем варианты качества
     links = await get_download_links(link)
     if not links:
         await callback.message.answer("⚠️ Не удалось найти ссылки для скачивания.")

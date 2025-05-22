@@ -3,3 +3,4 @@ aiohttp==3.9.3
 python-dotenv==1.0.1
 beautifulsoup4==4.12.3
 telethon==1.32.0
+aiohttp-socks==0.8.4

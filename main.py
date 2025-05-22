@@ -8,21 +8,18 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.client.default import DefaultBotProperties
 from search import search_movie
-from kinogo_utils import get_download_url
+from kinosimka_utils import get_download_url
 import aiohttp
-import asyncio
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
 PORT = int(os.getenv("PORT", 10000))
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
-# Сохраняем результаты поиска между шагами
 user_search_results = {}
 
 @dp.message(F.text.lower() == "/start")
@@ -39,10 +36,7 @@ async def handle_search(message: types.Message):
         if not results:
             await message.answer("❌ Ничего не найдено")
             return
-        # Сохраняем для пользователя
         user_search_results[message.from_user.id] = results
-
-        # Формируем кнопки
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text=title, callback_data=f"select_{idx}")]
@@ -68,10 +62,9 @@ async def process_selection(callback: CallbackQuery):
     try:
         download_url = await get_download_url(link)
         if not download_url:
-            await callback.message.answer("⚠️ Не удалось найти ссылку для скачивания на Плеере 3.")
+            await callback.message.answer("⚠️ Не удалось найти ссылку для скачивания.")
             return
 
-        # Скачиваем видео (только если это mp4, иначе просто шлём ссылку)
         if download_url.endswith(".mp4"):
             fname = f"{title}.mp4"
             async with aiohttp.ClientSession() as session:
@@ -106,7 +99,6 @@ def create_app():
     return app
 
 if __name__ == "__main__":
-    import asyncio
     import logging
     logging.basicConfig(level=logging.INFO)
     app = create_app()

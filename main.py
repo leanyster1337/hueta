@@ -13,45 +13,44 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "").strip()
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 PORT = int(os.getenv("PORT", 10000))
 
-# Проверка на валидность WEBHOOK_HOST
 if not WEBHOOK_HOST.startswith("https://"):
-    raise ValueError("WEBHOOK_HOST должен начинаться с https:// и быть валидным URL Render-сервиса.")
+    raise ValueError("Invalid WEBHOOK_HOST")
 
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# Инициализация логов и бота
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
-# Команда /start
 @dp.message(F.text.lower() == "/start")
 async def cmd_start(message: types.Message):
-    await message.answer("Здарова, кожаный! Пиши название фильма, если не тупой 🖕")
+    await message.answer("Бот запущен. Введите название фильма для поиска.")
 
-# Обработка текстовых сообщений
 @dp.message(F.text)
 async def handle_search(message: types.Message):
     query = message.text.strip()
-    await message.answer("Секунду, ищу твою парашу 🎬")
-
+    await message.answer("Ищем... 🔍")
+    
     try:
         results = await search_movie(query)
         if not results:
-            await message.answer("Ничего не нашёл. Может, ты и в школе так же искал знания?")
+            await message.answer("Ничего не найдено 😕")
             return
 
+        # Отправка пользователю и в канал
         for title, magnet in results:
-            await message.answer(f"<b>{title}</b>\n<code>{magnet}</code>", parse_mode=ParseMode.HTML)
+            msg = f"<b>{title}</b>\n<code>{magnet}</code>"
+            await message.answer(msg, parse_mode=ParseMode.HTML)
+            await bot.send_message(CHANNEL_ID, msg, parse_mode=ParseMode.HTML)
 
     except Exception as e:
-        logging.exception("Ошибка при поиске")
-        await message.answer("Произошла какая-то хрень. Попробуй позже, лады?")
+        logging.error(f"Ошибка: {e}")
+        await message.answer("Ошибка поиска ⚠️")
 
-# Webhook-приложение
 async def on_startup(app: web.Application):
     await bot.set_webhook(WEBHOOK_URL)
 

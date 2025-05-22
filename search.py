@@ -2,19 +2,21 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 async def search_movie(query):
-    url = f"https://m.kinosimka.plus/index.php?do=search&subaction=search&story={query}"
+    url = f"https://m.kinosimka.plus/poisk.html"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    data = {"story": query, "do": "search", "subaction": "search"}
+
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}) as resp:
+        async with session.post(url, data=data, headers=headers) as resp:
             html = await resp.text()
-    print(html[:2000])  # <--- добавь эту строку для отладки!
+
     soup = BeautifulSoup(html, "html.parser")
     results = []
-    for movie in soup.select(".shortstory"):
-        a = movie.select_one(".short-title a")
-        if not a:
-            continue
-        title = a.text.strip()
-        link = a.get("href")
+    # Каждый фильм — это блок с <a> (с названием) и постером
+    for div in soup.find_all("div", class_="content"):
+        a = div.find("a")
+        title = a.text.strip() if a else None
+        link = a.get("href") if a else None
         if title and link:
             if link.startswith("/"):
                 link = f"https://m.kinosimka.plus{link}"

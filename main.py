@@ -13,7 +13,7 @@ import asyncio
 
 load_dotenv()
 
-# Проверка и загрузка обязательных переменных окружения
+# Проверка обязательных переменных окружения
 REQUIRED_VARS = ["BOT_TOKEN", "API_ID", "API_HASH", "CHANNEL_ID", "WEBHOOK_HOST"]
 missing_vars = [v for v in REQUIRED_VARS if not os.getenv(v)]
 if missing_vars:
@@ -35,7 +35,7 @@ dp = Dispatcher(storage=MemoryStorage())
 
 async def send_to_channel(file_path, title):
     """Отправить файл в канал через Telethon"""
-    await client.start(bot_token=BOT_TOKEN)
+    client.start(bot_token=BOT_TOKEN)
     entity = await client.get_entity(CHANNEL_ID)
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Файл {file_path} не найден")
@@ -49,9 +49,8 @@ async def send_to_channel(file_path, title):
 
 async def is_cached(title):
     """Проверить, есть ли уже файл с таким названием в канале"""
-    await client.start(bot_token=BOT_TOKEN)
+    client.start(bot_token=BOT_TOKEN)
     async for message in client.iter_messages(CHANNEL_ID, search=title):
-        # Проверяем, есть ли у сообщения документ (файл)
         if hasattr(message, "document") and message.document:
             return message
     return None
@@ -70,11 +69,9 @@ async def handle_search(message: types.Message):
         cached = await is_cached(query)
         if cached:
             await message.answer("✅ Найден в кэше:")
-            # Получаем file_reference для пересылки документа пользователю
             if hasattr(cached, "document") and cached.document:
                 file_id = cached.id
                 await bot.send_message(message.chat.id, "Файл найден в канале, пересылаю...")
-                # Пересылаем сообщение с файлом пользователю
                 await bot.forward_message(message.chat.id, CHANNEL_ID, file_id)
             else:
                 await message.answer("⚠️ Файл найден, но не удалось получить документ.")
@@ -87,12 +84,11 @@ async def handle_search(message: types.Message):
             return
 
         for title, magnet in results:
-            # Здесь должна быть реализация скачивания видео по magnet-ссылке
-            # Например, через qBittorrent, WebTorrent или другую библиотеку
-            # Заглушка: предполагаем, что скачали торрент в /tmp/{title}.torrent
+            # Здесь должна быть интеграция с торрент-клиентом для скачивания файла по magnet-ссылке
+            # Заглушка: создаём фейковый файл для примера
             torrent_path = f"/tmp/{title}.torrent"
             with open(torrent_path, "wb") as f:
-                f.write(b"FAKE TORRENT DATA")  # Заглушка
+                f.write(b"FAKE TORRENT DATA")
 
             # Отправка в канал и пользователю
             msg = await send_to_channel(torrent_path, title)
@@ -103,7 +99,6 @@ async def handle_search(message: types.Message):
                 await message.answer(f"📥 Файл сохранён в канале: {CHANNEL_ID}")
             else:
                 await message.answer("⚠️ Не удалось отправить файл в канал.")
-            # После первого успешного — выходим из цикла
             break
 
     except Exception as e:
@@ -122,7 +117,6 @@ def create_app():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(client.start(bot_token=BOT_TOKEN))
+    client.start(bot_token=BOT_TOKEN)  # Важно: синхронный вызов!
     app = create_app()
     web.run_app(app, host="0.0.0.0", port=PORT)

@@ -9,7 +9,6 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiogram.client.default import DefaultBotProperties
 from search import search_movie
 from telethon import TelegramClient
-import asyncio
 
 load_dotenv()
 
@@ -42,12 +41,6 @@ async def send_to_channel(file_path, title):
     )
     return message
 
-async def is_cached(title):
-    async for message in client.iter_messages(CHANNEL_ID, search=title):
-        if hasattr(message, "document") and message.document:
-            return message
-    return None
-
 @dp.message(F.text.lower() == "/start")
 async def cmd_start(message: types.Message):
     await message.answer("Введите название фильма:")
@@ -58,26 +51,19 @@ async def handle_search(message: types.Message):
     await message.answer("🔍 Поиск...")
 
     try:
-        cached = await is_cached(query)
-        if cached:
-            await message.answer("✅ Найден в кэше:")
-            if hasattr(cached, "document") and cached.document:
-                file_id = cached.id
-                await bot.send_message(message.chat.id, "Файл найден в канале, пересылаю...")
-                await bot.forward_message(message.chat.id, CHANNEL_ID, file_id)
-            else:
-                await message.answer("⚠️ Файл найден, но не удалось получить документ.")
-            return
-
         results = await search_movie(query)
         if not results:
             await message.answer("❌ Ничего не найдено")
             return
 
         for title, magnet in results:
+            # Здесь должна быть интеграция с торрент-клиентом для скачивания файла по magnet-ссылке
+            # Заглушка: создаём фейковый файл для примера
             torrent_path = f"/tmp/{title}.torrent"
             with open(torrent_path, "wb") as f:
                 f.write(b"FAKE TORRENT DATA")
+
+            # Отправка в канал и пользователю
             msg = await send_to_channel(torrent_path, title)
             if hasattr(msg, "document") and msg.document:
                 file_id = msg.id
@@ -93,7 +79,7 @@ async def handle_search(message: types.Message):
         await message.answer(f"⚠️ Ошибка. Попробуйте позже.\n{e}")
 
 async def on_startup(app):
-    await client.start(bot_token=BOT_TOKEN)  # <-- асинхронный запуск Telethon
+    await client.start(bot_token=BOT_TOKEN)
     await bot.set_webhook(f"{WEBHOOK_HOST}/webhook")
 
 def create_app():

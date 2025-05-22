@@ -13,7 +13,6 @@ import asyncio
 
 load_dotenv()
 
-# Проверка обязательных переменных окружения
 REQUIRED_VARS = ["BOT_TOKEN", "API_ID", "API_HASH", "CHANNEL_ID", "WEBHOOK_HOST"]
 missing_vars = [v for v in REQUIRED_VARS if not os.getenv(v)]
 if missing_vars:
@@ -26,16 +25,12 @@ CHANNEL_ID = os.getenv("CHANNEL_ID")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
 PORT = int(os.getenv("PORT", 10000))
 
-# Инициализация Telethon
 client = TelegramClient('bot_session', API_ID, API_HASH)
 
-# Инициализация aiogram
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
 async def send_to_channel(file_path, title):
-    """Отправить файл в канал через Telethon"""
-    client.start(bot_token=BOT_TOKEN)
     entity = await client.get_entity(CHANNEL_ID)
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Файл {file_path} не найден")
@@ -48,8 +43,6 @@ async def send_to_channel(file_path, title):
     return message
 
 async def is_cached(title):
-    """Проверить, есть ли уже файл с таким названием в канале"""
-    client.start(bot_token=BOT_TOKEN)
     async for message in client.iter_messages(CHANNEL_ID, search=title):
         if hasattr(message, "document") and message.document:
             return message
@@ -65,7 +58,6 @@ async def handle_search(message: types.Message):
     await message.answer("🔍 Поиск...")
 
     try:
-        # Проверка кэша
         cached = await is_cached(query)
         if cached:
             await message.answer("✅ Найден в кэше:")
@@ -77,20 +69,15 @@ async def handle_search(message: types.Message):
                 await message.answer("⚠️ Файл найден, но не удалось получить документ.")
             return
 
-        # Поиск и загрузка
         results = await search_movie(query)
         if not results:
             await message.answer("❌ Ничего не найдено")
             return
 
         for title, magnet in results:
-            # Здесь должна быть интеграция с торрент-клиентом для скачивания файла по magnet-ссылке
-            # Заглушка: создаём фейковый файл для примера
             torrent_path = f"/tmp/{title}.torrent"
             with open(torrent_path, "wb") as f:
                 f.write(b"FAKE TORRENT DATA")
-
-            # Отправка в канал и пользователю
             msg = await send_to_channel(torrent_path, title)
             if hasattr(msg, "document") and msg.document:
                 file_id = msg.id
@@ -106,6 +93,7 @@ async def handle_search(message: types.Message):
         await message.answer(f"⚠️ Ошибка. Попробуйте позже.\n{e}")
 
 async def on_startup(app):
+    await client.start(bot_token=BOT_TOKEN)  # <-- асинхронный запуск Telethon
     await bot.set_webhook(f"{WEBHOOK_HOST}/webhook")
 
 def create_app():
@@ -117,6 +105,5 @@ def create_app():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    client.start(bot_token=BOT_TOKEN)  # Важно: синхронный вызов!
     app = create_app()
     web.run_app(app, host="0.0.0.0", port=PORT)

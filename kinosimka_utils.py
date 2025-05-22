@@ -11,9 +11,8 @@ async def get_download_links(page_url):
         href = a.get("href", "")
         text = a.get_text(strip=True)
         if href.endswith(".mp4") and "Скачать" in text:
-            # Извлекаем качество из соседнего тэга (например, 320x240 или 720x304)
-            parent = a.parent
             quality = None
+            parent = a.parent
             if parent:
                 q_tag = parent.find(string=lambda t: "x" in t and " " not in t)
                 if q_tag:
@@ -23,7 +22,6 @@ async def get_download_links(page_url):
                 "url": href if href.startswith("http") else f"https://m.kinosimka.plus{href}",
                 "quality": quality
             })
-    # Фильтруем только 320 и 720
     filtered = []
     for r in results:
         q = r["quality"] or ""

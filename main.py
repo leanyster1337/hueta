@@ -7,34 +7,32 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.client.default import DefaultBotProperties
-
 from search import search_movie
 
-# Загрузка .env
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "").strip()
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 PORT = int(os.getenv("PORT", 10000))
 
-# Настройка логов
-logging.basicConfig(level=logging.INFO)
+# Проверка на валидность WEBHOOK_HOST
+if not WEBHOOK_HOST.startswith("https://"):
+    raise ValueError("WEBHOOK_HOST должен начинаться с https:// и быть валидным URL Render-сервиса.")
 
-# Инициализация бота
-bot = Bot(
-    token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+
+# Инициализация логов и бота
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
-# Стартовое сообщение
+# Команда /start
 @dp.message(F.text.lower() == "/start")
-async def start_cmd(message: types.Message):
+async def cmd_start(message: types.Message):
     await message.answer("Здарова, кожаный! Пиши название фильма, если не тупой 🖕")
 
-# Обработка текстовых сообщений — поиск фильма
+# Обработка текстовых сообщений
 @dp.message(F.text)
 async def handle_search(message: types.Message):
     query = message.text.strip()
@@ -43,7 +41,7 @@ async def handle_search(message: types.Message):
     try:
         results = await search_movie(query)
         if not results:
-            await message.answer("Ничего не нашёл. Может, ты и в школе также искал знания?")
+            await message.answer("Ничего не нашёл. Может, ты и в школе так же искал знания?")
             return
 
         for title, magnet in results:
@@ -53,7 +51,7 @@ async def handle_search(message: types.Message):
         logging.exception("Ошибка при поиске")
         await message.answer("Произошла какая-то хрень. Попробуй позже, лады?")
 
-# Запуск aiohttp-приложения
+# Webhook-приложение
 async def on_startup(app: web.Application):
     await bot.set_webhook(WEBHOOK_URL)
 

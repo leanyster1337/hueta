@@ -8,13 +8,16 @@ async def search_movie(query):
             html = await resp.text()
         soup = BeautifulSoup(html, "html.parser")
         results = []
-        # Находим блоки c фильмами (аватарка, название, ссылка)
+        # На мобильной версии simka фильмы обычно в .shortstory
         for movie in soup.select(".shortstory"):
             a = movie.select_one(".short-title a")
             if not a:
                 continue
             title = a.text.strip()
             link = a.get("href")
-            if title and link and link.startswith("http"):
+            if title and link:
+                # На этом сайте ссылки могут быть относительные, делаем абсолютными
+                if link.startswith("/"):
+                    link = f"https://m.kinosimka.plus{link}"
                 results.append((title, link))
         return results

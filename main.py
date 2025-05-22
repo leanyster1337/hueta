@@ -1,45 +1,29 @@
 import os
 import logging
 from dotenv import load_dotenv
-from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.client.default import DefaultBotProperties
 from search import search_movie
-from telethon import TelegramClient
+from kinogo_utils import get_download_url
+import aiohttp
+import asyncio
 
 load_dotenv()
 
-REQUIRED_VARS = ["BOT_TOKEN", "API_ID", "API_HASH", "CHANNEL_ID", "WEBHOOK_HOST"]
-missing_vars = [v for v in REQUIRED_VARS if not os.getenv(v)]
-if missing_vars:
-    raise RuntimeError(f"Не заданы переменные окружения: {', '.join(missing_vars)}")
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST")
 PORT = int(os.getenv("PORT", 10000))
 
-client = TelegramClient('bot_session', API_ID, API_HASH)
-
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
-async def send_to_channel(file_path, title):
-    entity = await client.get_entity(CHANNEL_ID)
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Файл {file_path} не найден")
-    message = await client.send_file(
-        entity,
-        file_path,
-        caption=f"🎬 {title}",
-        parse_mode="html"
-    )
-    return message
+# Сохраняем результаты поиска между шагами
+user_search_results = {}
 
 @dp.message(F.text.lower() == "/start")
 async def cmd_start(message: types.Message):
@@ -55,34 +39,66 @@ async def handle_search(message: types.Message):
         if not results:
             await message.answer("❌ Ничего не найдено")
             return
+        # Сохраняем для пользователя
+        user_search_results[message.from_user.id] = results
 
-        for title, magnet in results:
-            # Здесь должна быть интеграция с торрент-клиентом для скачивания файла по magnet-ссылке
-            # Заглушка: создаём фейковый файл для примера
-            torrent_path = f"/tmp/{title}.torrent"
-            with open(torrent_path, "wb") as f:
-                f.write(b"FAKE TORRENT DATA")
-
-            # Отправка в канал и пользователю
-            msg = await send_to_channel(torrent_path, title)
-            if hasattr(msg, "document") and msg.document:
-                file_id = msg.id
-                await bot.send_message(message.chat.id, "Файл загружен в канал, пересылаю...")
-                await bot.forward_message(message.chat.id, CHANNEL_ID, file_id)
-                await message.answer(f"📥 Файл сохранён в канале: {CHANNEL_ID}")
-            else:
-                await message.answer("⚠️ Не удалось отправить файл в канал.")
-            break
-
+        # Формируем кнопки
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=title, callback_data=f"select_{idx}")]
+                for idx, (title, link) in enumerate(results)
+            ]
+        )
+        await message.answer("Выберите нужный фильм:", reply_markup=kb)
     except Exception as e:
         logging.exception(e)
         await message.answer(f"⚠️ Ошибка. Попробуйте позже.\n{e}")
 
+@dp.callback_query(F.data.startswith("select_"))
+async def process_selection(callback: CallbackQuery):
+    idx = int(callback.data.replace("select_", ""))
+    results = user_search_results.get(callback.from_user.id)
+    if not results or idx >= len(results):
+        await callback.answer("Некорректный выбор")
+        return
+
+    title, link = results[idx]
+    await callback.message.answer(f"Ищу ссылку для скачивания для «{title}»...")
+
+    try:
+        download_url = await get_download_url(link)
+        if not download_url:
+            await callback.message.answer("⚠️ Не удалось найти ссылку для скачивания на Плеере 3.")
+            return
+
+        # Скачиваем видео (только если это mp4, иначе просто шлём ссылку)
+        if download_url.endswith(".mp4"):
+            fname = f"{title}.mp4"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(download_url) as resp:
+                    if resp.status != 200:
+                        await callback.message.answer("Ошибка скачивания видео.")
+                        return
+                    with open(fname, "wb") as f:
+                        while True:
+                            chunk = await resp.content.read(1024*1024)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+            await callback.message.answer("Отправляю файл...")
+            await bot.send_video(callback.from_user.id, types.FSInputFile(fname), caption=title)
+            os.remove(fname)
+        else:
+            await callback.message.answer(f"Видео найдено! Вот ссылка на скачивание или просмотр:\n{download_url}")
+    except Exception as e:
+        logging.exception(e)
+        await callback.message.answer(f"⚠️ Ошибка при получении видео: {e}")
+
 async def on_startup(app):
-    await client.start(bot_token=BOT_TOKEN)
     await bot.set_webhook(f"{WEBHOOK_HOST}/webhook")
 
 def create_app():
+    from aiohttp import web
     app = web.Application()
     SimpleRequestHandler(dp, bot).register(app, "/webhook")
     setup_application(app, dp)
@@ -90,6 +106,9 @@ def create_app():
     return app
 
 if __name__ == "__main__":
+    import asyncio
+    import logging
     logging.basicConfig(level=logging.INFO)
     app = create_app()
+    from aiohttp import web
     web.run_app(app, host="0.0.0.0", port=PORT)
